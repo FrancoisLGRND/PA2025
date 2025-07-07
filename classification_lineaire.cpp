@@ -23,12 +23,11 @@ float* define_bias(float* X, int dim){
 class LinearModel {
 public:
     int dim;
-    int num_class;
     float* w;
 
-    LinearModel(int dim, int num_class) {
+    LinearModel(int dim) {
         this->dim = dim;
-        w = new float[num_class];
+        w = new float[dim];
         for(int i = 0; i < dim; i++){
             w[i] = random_float(-1.0, 1.0);
         }
@@ -36,13 +35,13 @@ public:
 };
 
 extern "C" {
-DLLEXPORT LinearModel* create_linear_model(int32_t dim, int32_t num_class) {
-    return new LinearModel(dim, num_class);
+DLLEXPORT LinearModel* create_linear_model(int32_t dim) {
+    return new LinearModel(dim);
 }
 
-DLLEXPORT int32_t predict_binary_linear_model(LinearModel* model, float* X) { 
+DLLEXPORT float predict_linear_model(LinearModel* model, float* X) {
 
-    int somme_pond = 0;
+    float somme_pond = 0;
     for(int i = 0; i < model->dim; i++){
         somme_pond += model->w[i] * X[i];
     }
@@ -53,28 +52,25 @@ DLLEXPORT int32_t predict_binary_linear_model(LinearModel* model, float* X) {
     return -1.0;
 }
 
-DLLEXPORT float train_binary_linear_model(LinearModel *model, float** X, int32_t *Y, int32_t epochs, float learning_rate) {
+DLLEXPORT void train_linear_model(LinearModel *model, float* X, float *Y, int32_t epochs, float learning_rate, int32_t batch_size) {
     for(int i = 0; i < epochs; i++){
-        for (int j = 0; j < sizeof(X) / sizeof(X[0]); i++){
-            for(int k = 0; k < model->dim; i++){
-                float *Xk = define_bias(X[k], model->dim);
-                float predicted = predict_binary_linear_model(model, X[j]);
-                int actual = Y[j];
-                for(int k = 0; k < model->dim; k++){
-                    if(predicted != actual){
-                        model->w[k] += learning_rate; 
-                    }
+        for (int j = 0; j < batch_size; j++){
+            for(int k = 0; k < model->dim; k++){
+                float *Xk = define_bias(X, model->dim);
+                float gXk = predict_linear_model(model, Xk);
+                model->w[k] += learning_rate * (Y[k] - gXk) * X[k];
                 }
             }
         }
     }
-}
+
+
 
 DLLEXPORT void release_linear_model(LinearModel *model) {
     delete model;
 }
 
-DLLEXPORT float sum_array(const float* array, int32_t array_length) {
+/* DLLEXPORT float sum_array(const float* array, int32_t array_length) {
     float sum = 0.0;
     for (auto i = 0; i < array_length; i++) {
         sum += array[i];
@@ -97,5 +93,5 @@ DLLEXPORT void delete_array(const float* array, int32_t array_length) {
 DLLEXPORT int32_t my_add(int32_t a, int32_t b) {
     return a + b;
 }
-}
-}
+}*/
+} 

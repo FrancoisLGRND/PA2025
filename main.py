@@ -9,26 +9,17 @@ def run():
     # lib = ctypes.cdll.LoadLibrary(
     #     "../_2025_3A_IABD1_DemoInteropRust/target/debug/_2025_3A_IABD1_DemoInteropRust.dll")
 
-    lib.my_add.argtypes = [ctypes.c_int32, ctypes.c_int32]
-    lib.my_add.restype = ctypes.c_int32
-
-    lib.create_linear_model.argtypes = [ctypes.c_float, ctypes.c_float]
+    lib.create_linear_model.argtypes = [ctypes.c_int32]
     lib.create_linear_model.restype = ctypes.c_void_p
 
-    lib.predict_linear_model.argtypes = [ctypes.c_void_p]
+    lib.predict_linear_model.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_float)]
     lib.predict_linear_model.restype = ctypes.c_float
 
     lib.release_linear_model.argtypes = [ctypes.c_void_p]
     lib.release_linear_model.restype = None
 
-    lib.sum_array.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.c_int32]
-    lib.sum_array.restype = ctypes.c_float
-
-    lib.get_array_of_incrementing_numbers.argtypes = [ctypes.c_int32]
-    lib.get_array_of_incrementing_numbers.restype = ctypes.POINTER(ctypes.c_float)
-
-    lib.delete_array.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.c_int32]
-    lib.delete_array.restype = None
+    lib.train_linear_model.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float), ctypes.c_int32, ctypes.c_float, ctypes.c_int32]
+    lib.train_linear_model.restype = None
 
     model = lib.create_linear_model(42.0, 51.0)
     print(lib.predict_linear_model(model))
