@@ -1,5 +1,8 @@
 #include <cstdint>
 #include <cstdlib>
+#include <stdio.h>
+#include <string.h>
+#include <fstream>
 
 #if WIN32
 #define DLLEXPORT __declspec(dllexport)
@@ -7,9 +10,7 @@
 #define DLLEXPORT
 #endif
 
-#include <stdio.h>
-#include <string.h>
-#include <fstream>
+
 
 void log_to_file(const char* message) {
     std::ofstream out("log_cpp.txt", std::ios::app);
