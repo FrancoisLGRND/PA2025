@@ -10,6 +10,10 @@
 #define DLLEXPORT
 #endif
 
+typedef void (*LoggerCallback)(const char*);
+
+LoggerCallback g_logger = nullptr;
+
 void log_to_file(const char* message) {
     std::ofstream out("log_cpp.txt", std::ios::app);
     out << message << std::endl;
@@ -53,65 +57,68 @@ void mlp_propagate(MLP* model, float* input, bool is_classification) {
 
 extern "C" {
 
-DLLEXPORT MLP* create_mlp_model(int* layer_sizes, int n_layers) {
-    MLP* model = new MLP;
-    model->n_layers = n_layers;
-    model->layer_sizes = new int[n_layers + 1];
-    std::memcpy(model->layer_sizes, layer_sizes, (n_layers + 1) * sizeof(int));
-
-    model->W = new float**[n_layers + 1];
-    model->X = new float*[n_layers + 1];
-    model->deltas = new float*[n_layers + 1];
-
-    for (int l = 0; l <= n_layers; ++l) {
-        int cur_size = layer_sizes[l] + 1;
-        model->X[l] = new float[cur_size];
-        model->deltas[l] = new float[cur_size];
-
-        std::fill(model->deltas[l], model->deltas[l] + cur_size, 0.0f);
-        model->X[l][0] = 1.0f;  // biais
-        for (int j = 1; j < cur_size; ++j)
-            model->X[l][j] = 0.0f;
-
-        if (l == 0) {
-            model->W[l] = nullptr;
-            continue;
-        }
-
-        int prev_size = layer_sizes[l - 1] + 1;
-        model->W[l] = new float*[prev_size];
-
-        for (int i = 0; i < prev_size; ++i) {
-            model->W[l][i] = new float[cur_size];
-            for (int j = 0; j < cur_size; ++j) {
-                // Initialisation aléatoire, y compris le biais
-                model->W[l][i][j] = ((float)rand() / RAND_MAX) * 2 - 1;
-            }
-        }
+    DLLEXPORT void set_logger(LoggerCallback cb) {
+        g_logger = cb;
     }
 
-    return model;
-}
+    DLLEXPORT MLP* create_mlp_model(int* layer_sizes, int n_layers) {
+        MLP* model = new MLP;
+        model->n_layers = n_layers;
+        model->layer_sizes = new int[n_layers + 1];
+        std::memcpy(model->layer_sizes, layer_sizes, (n_layers + 1) * sizeof(int));
 
-DLLEXPORT float* predict_mlp_model(MLP* model, float* input, bool is_classification) {
-    mlp_propagate(model, input, is_classification);
-    int output_dim = model->layer_sizes[model->n_layers];
-    float* output_predict = new float[output_dim];
-    for (int j = 1; j <= output_dim; ++j)
-        output_predict[j - 1] = model->X[model->n_layers][j];
-    return output_predict;
-}
+        model->W = new float**[n_layers + 1];
+        model->X = new float*[n_layers + 1];
+        model->deltas = new float*[n_layers + 1];
 
-DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
-                     int epochs, float lr, int batch_size, bool is_classification) {
+        for (int l = 0; l <= n_layers; ++l) {
+            int cur_size = layer_sizes[l] + 1;
+            model->X[l] = new float[cur_size];
+            model->deltas[l] = new float[cur_size];
+
+            std::fill(model->deltas[l], model->deltas[l] + cur_size, 0.0f);
+            model->X[l][0] = 1.0f;  // biais
+            for (int j = 1; j < cur_size; ++j)
+                model->X[l][j] = 0.0f;
+
+            if (l == 0) {
+                model->W[l] = nullptr;
+                continue;
+            }
+
+            int prev_size = layer_sizes[l - 1] + 1;
+            model->W[l] = new float*[prev_size];
+
+            for (int i = 0; i < prev_size; ++i) {
+                model->W[l][i] = new float[cur_size];
+                for (int j = 0; j < cur_size; ++j) {
+                    // Initialisation aléatoire, y compris le biais
+                    model->W[l][i][j] = ((float)rand() / RAND_MAX) * 2 - 1;
+                }
+            }
+        }
+
+        return model;
+    }
+
+    DLLEXPORT float* predict_mlp_model(MLP* model, float* input, bool is_classification) {
+        mlp_propagate(model, input, is_classification);
+        int output_dim = model->layer_sizes[model->n_layers];
+        float* output_predict = new float[output_dim];
+        for (int j = 1; j <= output_dim; ++j)
+            output_predict[j - 1] = model->X[model->n_layers][j];
+        return output_predict;
+    }
+
+    DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
+                                int epochs, float lr, int batch_size, bool is_classification,
+                                float* test_inputs, float* test_targets, int test_size) {
     char buffer[512];
     sprintf(buffer, "Starting train: epochs=%d, batch_size=%d, lr=%f", epochs, batch_size, lr);
     log_to_file(buffer);
 
     int input_dim = model->layer_sizes[0];
     int output_dim = model->layer_sizes[model->n_layers];
-
-    //calcul des coefficients par rapport au nombre d'input par classe
 
     int* class_counts = new int[output_dim];
     float* class_weights = new float[output_dim];
@@ -144,7 +151,6 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
 
         mlp_propagate(model, sample_input, is_classification);
 
-        // Calcul deltas couche de sortie
         for (int j = 1; j <= output_dim; ++j) {
             float out = model->X[model->n_layers][j];
             float target = sample_target[j - 1];
@@ -154,12 +160,11 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
                 delta *= activate_deriv_from_output(out);
 
             if (is_classification && target == 1.0f)
-                delta *= class_weights[j - 1];  // j starts from 1
+                delta *= class_weights[j - 1];
 
             model->deltas[model->n_layers][j] = delta;
         }
 
-        // Back‑propagtion
         for (int l = model->n_layers - 1; l >= 1; --l) {
             for (int i = 1; i <= model->layer_sizes[l]; ++i) {
                 float sum = 0.0f;
@@ -170,7 +175,6 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
             }
         }
 
-        // Mise à jour des poids
         for (int l = 1; l <= model->n_layers; ++l) {
             for (int i = 0; i <= model->layer_sizes[l - 1]; ++i) {
                 for (int j = 1; j <= model->layer_sizes[l]; ++j) {
@@ -179,30 +183,62 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
             }
         }
 
-        if ((e + 1) % (epochs / 10) == 0) {
-            sprintf(buffer, "Epoch %d/%d complete", e + 1, epochs);
-            log_to_file(buffer);
+        if ((e + 1) % (epochs / 10) == 0 && g_logger) {
+            int correct = 0;
+            for (int i = 0; i < test_size; ++i) {
+                float* test_input = test_inputs + i * input_dim;
+                float* true_label = test_targets + i * output_dim;
+
+                mlp_propagate(model, test_input, is_classification);
+
+                int predicted = 0;
+                float max_out = model->X[model->n_layers][1];
+                for (int j = 2; j <= output_dim; ++j) {
+                    if (model->X[model->n_layers][j] > max_out) {
+                        max_out = model->X[model->n_layers][j];
+                        predicted = j - 1;
+                    }
+                }
+
+                int actual = 0;
+                for (int j = 0; j < output_dim; ++j) {
+                    if (true_label[j] == 1.0f) {
+                        actual = j;
+                        break;
+                    }
+                }
+
+                if (predicted == actual)
+                    correct++;
+            }
+
+            float acc = (float)correct / test_size * 100.0f;
+            char msg[128];
+            sprintf(msg, "Epoch %d: Accuracy = %.2f%%", e + 1, acc);
+            g_logger(msg);
         }
     }
+
     delete[] class_counts;
     delete[] class_weights;
 }
 
-DLLEXPORT void release_mlp_model(MLP* model) {
-    for (int l = 1; l <= model->n_layers; ++l) {
-        for (int i = 0; i <= model->layer_sizes[l - 1]; ++i)
-            delete[] model->W[l][i];
-        delete[] model->W[l];
+
+    DLLEXPORT void release_mlp_model(MLP* model) {
+        for (int l = 1; l <= model->n_layers; ++l) {
+            for (int i = 0; i <= model->layer_sizes[l - 1]; ++i)
+                delete[] model->W[l][i];
+            delete[] model->W[l];
+        }
+        for (int l = 0; l <= model->n_layers; ++l) {
+            delete[] model->X[l];
+            delete[] model->deltas[l];
+        }
+        delete[] model->W;
+        delete[] model->X;
+        delete[] model->deltas;
+        delete[] model->layer_sizes;
+        delete model;
     }
-    for (int l = 0; l <= model->n_layers; ++l) {
-        delete[] model->X[l];
-        delete[] model->deltas[l];
-    }
-    delete[] model->W;
-    delete[] model->X;
-    delete[] model->deltas;
-    delete[] model->layer_sizes;
-    delete model;
-}
 
 }  // extern "C"
