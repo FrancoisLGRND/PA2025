@@ -27,14 +27,6 @@ float activate_deriv_from_output(float activated_x) {
     return 1.0f - activated_x * activated_x;
 }
 
-// ReLU et dérivée
-float relu(float x) {
-    return x > 0 ? x : 0;
-}
-
-float relu_deriv_from_output(float activated_x) {
-    return activated_x > 0 ? 1.0f : 0.0f;
-}
 
 // Softmax pour sortie en classification
 void softmax(float* input, int size) {
@@ -53,15 +45,61 @@ void softmax(float* input, int size) {
         input[i] /= sum;
 }
 
-struct MLP {
+class MLP {
+public:
     int* layer_sizes;
     int n_layers;
     float*** W;
     float** X;
     float** deltas;
     int** confusion_matrix;
-};
 
+    MLP() {
+        layer_sizes = nullptr;
+        n_layers = 0;
+        W = nullptr;
+        X = nullptr;
+        deltas = nullptr;
+        confusion_matrix = nullptr;
+    }
+
+    ~MLP() {
+        cleanup();
+    }
+
+    void cleanup() {
+        if (W) {
+            for (int l = 1; l <= n_layers; ++l) {
+                if (W[l]) {
+                    for (int i = 0; i <= layer_sizes[l - 1]; ++i)
+                        delete[] W[l][i];
+                    delete[] W[l];
+                }
+            }
+            delete[] W;
+        }
+
+        if (X) {
+            for (int l = 0; l <= n_layers; ++l)
+                delete[] X[l];
+            delete[] X;
+        }
+
+        if (deltas) {
+            for (int l = 0; l <= n_layers; ++l)
+                delete[] deltas[l];
+            delete[] deltas;
+        }
+
+        if (confusion_matrix) {
+            for (int i = 0; i < layer_sizes[n_layers]; ++i)
+                delete[] confusion_matrix[i];
+            delete[] confusion_matrix;
+        }
+
+        delete[] layer_sizes;
+    }
+};
 void mlp_propagate(MLP* model, float* input, bool is_classification) {
     int num_classes = model->layer_sizes[model->n_layers];
     bool use_softmax = is_classification && num_classes > 2;
@@ -89,7 +127,7 @@ DLLEXPORT void set_logger(LoggerCallback cb) {
 }
 
 DLLEXPORT MLP* create_mlp_model(int* layer_sizes, int n_layers) {
-    MLP* model = new MLP;
+    MLP* model = new MLP();
     model->n_layers = n_layers;
     model->layer_sizes = new int[n_layers + 1];
     std::memcpy(model->layer_sizes, layer_sizes, (n_layers + 1) * sizeof(int));
@@ -141,15 +179,11 @@ DLLEXPORT float* predict_mlp_model(MLP* model, float* input, bool is_classificat
 
 DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
                                int training_size, int epochs, float lr, int batch_size, bool is_classification,
-                               const char* hidden_activation,
                                float* test_inputs, float* test_targets, int test_size) {
     int input_dim = model->layer_sizes[0];
     int output_dim = model->layer_sizes[model->n_layers];
     bool use_softmax = is_classification && output_dim > 2;
 
-    bool use_relu = false;
-    if (hidden_activation && std::strcmp(hidden_activation, "relu") == 0)
-        use_relu = true;
 
     std::vector<std::vector<std::vector<float>>> grad_accum(model->n_layers + 1);
     for (int l = 1; l <= model->n_layers; ++l) {
@@ -185,14 +219,13 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
                     float sum = 0.0f;
                     for (int i = 0; i <= model->layer_sizes[l - 1]; ++i)
                         sum += model->W[l][i][j] * local_X[l - 1][i];
-                    local_X[l][j] = (l == model->n_layers)
-                        ? sum
-                        : (use_relu ? relu(sum) : activate(sum));
+                    local_X[l][j] = (l == model->n_layers) ? sum : activate(sum);
                 }
             }
 
-            if (use_softmax)
+            if (use_softmax){
                 softmax(local_X[model->n_layers].data(), output_dim);
+            }
 
             for (int j = 1; j <= output_dim; ++j) {
                 float out = local_X[model->n_layers][j];
@@ -205,9 +238,7 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
                     float s = 0.0f;
                     for (int j = 1; j <= model->layer_sizes[l + 1]; ++j)
                         s += model->W[l + 1][i][j] * local_deltas[l + 1][j];
-                    local_deltas[l][i] = s * (use_relu
-                        ? relu_deriv_from_output(local_X[l][i])
-                        : activate_deriv_from_output(local_X[l][i]));
+                    local_deltas[l][i] = s * activate_deriv_from_output(local_X[l][i]);
                 }
             }
 
@@ -263,7 +294,6 @@ DLLEXPORT void train_mlp_model(MLP* model, float* inputs, float* targets,
 DLLEXPORT void evaluate_confusion_matrix(MLP* model, float* test_inputs, float* test_targets, int test_size, bool is_classification) {
     int input_dim = model->layer_sizes[0];
     int output_dim = model->layer_sizes[model->n_layers];
-    bool use_softmax = is_classification && output_dim > 2;
 
     for (int i = 0; i < output_dim; ++i)
         std::fill(model->confusion_matrix[i], model->confusion_matrix[i] + output_dim, 0);
@@ -296,24 +326,48 @@ DLLEXPORT void get_confusion_matrix(MLP* model, int* out_matrix) {
 }
 
 DLLEXPORT void release_mlp_model(MLP* model) {
-    for (int l = 1; l <= model->n_layers; ++l) {
-        for (int i = 0; i <= model->layer_sizes[l - 1]; ++i)
-            delete[] model->W[l][i];
-        delete[] model->W[l];
-    }
-    for (int l = 0; l <= model->n_layers; ++l) {
-        delete[] model->X[l];
-        delete[] model->deltas[l];
-    }
-    int od = model->layer_sizes[model->n_layers];
-    for (int i = 0; i < od; ++i)
-        delete[] model->confusion_matrix[i];
-    delete[] model->confusion_matrix;
-    delete[] model->W;
-    delete[] model->X;
-    delete[] model->deltas;
-    delete[] model->layer_sizes;
     delete model;
 }
 
-} // extern "C"
+DLLEXPORT void save_mlp_model(MLP* model, const char* filename) {
+    std::ofstream out(filename, std::ios::binary);
+    if (!out) return;
+
+    out.write((char*)&model->n_layers, sizeof(int));
+    out.write((char*)model->layer_sizes, (model->n_layers + 1) * sizeof(int));
+
+    for (int l = 1; l <= model->n_layers; ++l) {
+        int rows = model->layer_sizes[l - 1] + 1;
+        int cols = model->layer_sizes[l] + 1;
+        for (int i = 0; i < rows; ++i) {
+            out.write((char*)model->W[l][i], cols * sizeof(float));
+        }
+    }
+
+    out.close();
+}
+
+DLLEXPORT MLP* load_mlp_model(const char* filename) {
+    std::ifstream in(filename, std::ios::binary);
+    if (!in) return nullptr;
+
+    int n_layers = 0;
+    in.read((char*)&n_layers, sizeof(int));
+    int* layer_sizes = new int[n_layers + 1];
+    in.read((char*)layer_sizes, (n_layers + 1) * sizeof(int));
+
+    MLP* model = create_mlp_model(layer_sizes, n_layers);
+    delete[] layer_sizes;
+
+    for (int l = 1; l <= model->n_layers; ++l) {
+        int rows = model->layer_sizes[l - 1] + 1;
+        int cols = model->layer_sizes[l] + 1;
+        for (int i = 0; i < rows; ++i) {
+            in.read((char*)model->W[l][i], cols * sizeof(float));
+        }
+    }
+
+    in.close();
+    return model;
+}
+}
