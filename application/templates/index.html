@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>MLZoo</title>
+</head>
+<script>
+        function run_model() {
+            var fileInput = document.getElementById("input_file");
+            var file = fileInput.files[0];
+
+            if (!file) {
+                alert("Veuillez choisir une image.");
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append("image", file);
+
+            fetch("/run_model", {
+                method: "POST",
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("response").textContent = "Espèce détectée : " + data.result;
+            })
+            .catch(err => {
+                document.getElementById("response").textContent = "Erreur : " + err;
+            });
+        }
+    </script>
+<body>
+    <h1>Découvrez quelle espèce vous avez rencontré !</h1>
+    <div>
+        <input type="file" accept="image" id="input_file">
+    </div>
+    <button onclick="run_model()">Envoyer</button>
+    <span id="response"></span>
+</body>
