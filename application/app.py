@@ -17,8 +17,7 @@ mlp.load_mlp_model.restype = ctypes.c_void_p
 mlp.predict_mlp_model.restype = ctypes.POINTER(ctypes.c_float)
 mlp.predict_mlp_model.argtypes = [
     ctypes.c_void_p,
-    ctypes.POINTER(ctypes.c_float),
-    ctypes.c_bool
+    ctypes.POINTER(ctypes.c_float)
 ]
 
 model = mlp.load_mlp_model(b"./mlp_trained.bin")
@@ -46,7 +45,7 @@ def run_model():
     img = img.convert("RGB")
     img = img.resize(size=(32,32))
     img_data = np.array(img) / 255.0
-    output_array = mlp.predict_mlp_model(model, img_data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), True)
+    output_array = mlp.predict_mlp_model(model, img_data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
     output_array = ctypes.cast(output_array, ctypes.POINTER(ctypes.c_float * len(classnames_array))).contents
     output = list(output_array)
     class_index = 0
