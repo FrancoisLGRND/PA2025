@@ -9,7 +9,7 @@ import io
 mingw_bin = "C:/msys64/mingw64/bin"
 os.add_dll_directory(mingw_bin)
 
-classnames_array = ['buffalo', 'elephant', 'zebre']
+classnames_array = ['Crocodile', 'Elephant', 'Gorille']
 mlp = ctypes.cdll.LoadLibrary("./cmake-build-debug/libmlp.dll") 
 mlp.release_mlp_model.argtypes = [ctypes.c_void_p]
 mlp.load_mlp_model.argtypes = [ctypes.c_char_p]
@@ -43,7 +43,7 @@ def run_model():
         return jsonify({'result': f"Erreur lecture image : {e}"}), 500
 
     img = img.convert("RGB")
-    img = img.resize(size=(32,32))
+    img = img.resize(size=(16,16))
     img_data = np.array(img) / 255.0
     output_array = mlp.predict_mlp_model(model, img_data.ctypes.data_as(ctypes.POINTER(ctypes.c_float)))
     output_array = ctypes.cast(output_array, ctypes.POINTER(ctypes.c_float * len(classnames_array))).contents
